@@ -86,6 +86,46 @@ public:
 } // namespace
 
 namespace {
+class ConvertTorchTensorLiteralOp
+    : public OpConversionPattern<ValueTensorLiteralOp> {
+public:
+  using OpConversionPattern<ValueTensorLiteralOp>::OpConversionPattern;
+  using OpAdaptor = ValueTensorLiteralOp::Adaptor;
+  LogicalResult
+  matchAndRewrite(ValueTensorLiteralOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (auto elements = op.valueAttr().dyn_cast<DenseIntElementsAttr>()) {
+      Type elemTy = op.valueAttr().getElementType();
+      rewriter.replaceOpWithNewOp<arith::ConstantOp>(
+          op,
+          elements.mapValues(
+              IntegerType::get(op.getContext(), elemTy.getIntOrFloatBitWidth()),
+              [&](const APInt &v) {
+                return APInt(elemTy.getIntOrFloatBitWidth(), v.getSExtValue());
+              }));
+      return success();
+    }
+    if (auto elements = op.valueAttr().dyn_cast<OpaqueElementsAttr>()) {
+      if (auto type = elements.getType().dyn_cast<RankedTensorType>()) {
+        if (auto intType = type.getElementType().dyn_cast<IntegerType>()) {
+          auto shapedType = RankedTensorType::get(
+              type.getShape(),
+              IntegerType::get(op->getContext(),
+                               intType.getIntOrFloatBitWidth()));
+          rewriter.replaceOpWithNewOp<arith::ConstantOp>(
+              op, OpaqueElementsAttr::get(elements.getDialect(), shapedType,
+                                          elements.getValue()));
+          return success();
+        }
+      }
+    }
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.valueAttr());
+    return success();
+  }
+};
+} // namespace
+
+namespace {
 template <typename OpTy>
 class ConvertTorchConstantOp : public OpConversionPattern<OpTy> {
 public:
@@ -131,8 +171,10 @@ public:
     target.addIllegalOp<AtenGtIntOp>();
     patterns.add<ConvertAtenGtIntOp>(typeConverter, context);
     target.addIllegalOp<ValueTensorLiteralOp>();
-    patterns.add<ConvertTorchConstantOp<ValueTensorLiteralOp>>(typeConverter,
-                                                               context);
+    // patterns.add<ConvertTorchConstantOp<ValueTensorLiteralOp>>(typeConverter,
+    //                                                            context);
+    patterns.add<ConvertTorchTensorLiteralOp>(typeConverter, context);
+
     target.addIllegalOp<ConstantBoolOp>();
     patterns.add<ConvertTorchConstantOp<ConstantBoolOp>>(typeConverter,
                                                          context);

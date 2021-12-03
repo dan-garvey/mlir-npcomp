@@ -740,7 +740,7 @@ class ContiguousModule(torch.nn.Module):
 @register_test_case(module_factory=lambda: ContiguousModule())
 def ContiguousModule_basic(module, tu: TestUtils):
     module.forward(tu.rand(3, 1))
-    
+
 class TensorToInt(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -751,7 +751,7 @@ class TensorToInt(torch.nn.Module):
         ([], torch.int64, True),
     ])
     def forward(self, x):
-        return int(x)
+        return torch.ops.aten.Int(x)
 
 
 @register_test_case(module_factory=lambda: TensorToInt())
@@ -837,7 +837,7 @@ class AddCMulModule(torch.nn.Module):
 
     @export
     @annotate_args([
-        None,   
+        None,
         ([-1, -1], torch.float32, True),
         ([-1, -1], torch.float32, True),
         ([-1, -1], torch.float32, True),
@@ -856,7 +856,7 @@ class AddCDivModule(torch.nn.Module):
 
     @export
     @annotate_args([
-        None,   
+        None,
         ([-1, -1], torch.float32, True),
         ([-1, -1], torch.float32, True),
         ([-1, -1], torch.float32, True),
@@ -1179,3 +1179,14 @@ class BoolTensorReturnMixedModule(torch.nn.Module):
 @register_test_case(module_factory=lambda: BoolTensorReturnMixedModule())
 def BoolTensorReturnMixedModule_basic(module, tu: TestUtils):
     module.forward(torch.tensor([[1, 0], [0,1]], dtype=torch.bool))
+
+class TestModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.t = torch.tensor(3)
+        return torch.add(self.t, self.t)
+
+
+@register_test_case(module_factory=lambda: TestModule())
+def TestModule_basic(module, tu: TestUtils):
+    module.forward()
