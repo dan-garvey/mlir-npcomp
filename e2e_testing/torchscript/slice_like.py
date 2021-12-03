@@ -21,7 +21,7 @@ class SliceModule(torch.nn.Module):
         ([-1, -1, -1], torch.float32, True),
     ])
     def forward(self, x):
-        return x[0:5:1, 1:3:1, 2:4:1]
+        return x[2:1, 1:3:1, 2:4:1]
 
 
 @register_test_case(module_factory=lambda: SliceModule())
