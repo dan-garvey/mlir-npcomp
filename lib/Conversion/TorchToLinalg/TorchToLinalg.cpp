@@ -2546,7 +2546,81 @@ public:
   }
 };
 } // namespace
+// Converts reshape ops that can be proven to be either a collapse of dimensions
+// or expansion of dimensions of the operand.
+class ConvertAtenReshapeOp : public OpConversionPattern<AtenReshapeOp> {
+ public:
+  using OpConversionPattern::OpConversionPattern;
 
+  LogicalResult matchAndRewrite(
+      AtenReshapeOp reshapeOp, AtenReshapeOp::Adaptor adaptor,
+      ConversionPatternRewriter& rewriter) const final {
+    if (failed(verifyLinalgCompatibleTypes(reshapeOp, rewriter)))
+      return failure();
+    auto input = adaptor.self();
+    auto inputType = input.getType().cast<RankedTensorType>();
+    auto elemType = inputType.getElementType();
+    auto resultType = reshapeOp.getType().cast<RankedTensorType>();
+
+    if (!resultType.hasStaticShape()) return failure();
+
+    resultType = typeConverter->convertType(resultType).cast<RankedTensorType>();
+
+    // TODO: add dim ops for dynamic input shape handling.
+
+    // Compute the reassociation maps for the linalg operation. This will
+    // succeed if the reshape can be done with a single expand_shape or
+    // collapse_shape.
+    if (Optional<SmallVector<ReassociationIndices>> reassociationMap =
+            getReassociationIndicesForReshape(inputType, resultType)) {
+      if (resultType.getRank() < inputType.getRank()) {
+        rewriter.replaceOpWithNewOp<linalg::TensorCollapseShapeOp>(
+            reshapeOp, resultType, input, *reassociationMap);
+      } else {
+        rewriter.replaceOpWithNewOp<linalg::TensorExpandShapeOp>(
+            reshapeOp, resultType, input, *reassociationMap);
+      }
+      return success();
+    }
+
+    Value collapsedOp = input;
+    Location loc = reshapeOp.getLoc();
+    auto getIdentityExprs = [&rewriter](int64_t n) {
+      SmallVector<AffineExpr> exprs;
+      for (int i = 0; i < n; ++i) exprs.push_back(rewriter.getAffineDimExpr(i));
+      return exprs;
+    };
+    // Otherwise, we need to first reduce all source dimensions into one and
+    // then expand to the destination dimensions. If there is only a single
+    // source dimension, the reduce step can be skipped. TensorCollapseShape
+    // expects a different rank of input and result.
+    if (inputType.getRank() != 1) {
+      SmallVector<ReassociationExprs> collapsingMap = {
+          // Use inputType here because we need to collapse all inputs
+          // dimensions.
+          getIdentityExprs(inputType.getRank())};
+
+      collapsedOp = rewriter.create<linalg::TensorCollapseShapeOp>(loc, input,
+                                                              collapsingMap);
+    }
+    // Cast to a known static type if the input has dynamic dimensions.
+    int64_t total_elems = resultType.getNumElements();
+    auto collapsedType = RankedTensorType::get({total_elems}, elemType);
+    collapsedOp =
+        rewriter.create<tensor::CastOp>(loc, collapsedType, collapsedOp);
+    if (resultType.getRank() == 1) {
+      rewriter.replaceOp(reshapeOp, collapsedOp);
+    } else {
+      SmallVector<ReassociationExprs> expandingMap = {
+          // Use resultType here because we need to expand to all result
+          // dimensions.
+          getIdentityExprs(resultType.getRank())};
+      rewriter.replaceOpWithNewOp<linalg::TensorExpandShapeOp>(
+          reshapeOp, resultType, collapsedOp, expandingMap);
+    }
+    return success();
+  }
+};
 namespace {
 /// The `ConvertAtenViewOp` conversion pattern converts `aten.View` op to
 /// `linalg.TensorExpandShape` op only when one or multiple static dimensions
@@ -3751,6 +3825,8 @@ public:
     patterns.add<ConvertAtenNllLossForwardOp>(typeConverter, context);
     target.addIllegalOp<AtenIndexSelectOp>();
     patterns.add<ConvertAtenIndexSelectOp>(typeConverter, context);
+    target.addIllegalOp<AtenReshapeOp>();
+    patterns.add<ConvertAtenReshapeOp>(typeConverter, context);
 
     if (failed(applyPartialConversion(getOperation(), target,
                                       std::move(patterns))))

@@ -370,6 +370,8 @@ public:
                                          dtype, operands);
     } else if (auto view = dyn_cast<AtenViewOp>(op)) {
       return visitReshapeLikeOp(view, operands);
+    } else if (auto reshape = dyn_cast<AtenReshapeOp>(op)) {
+      return visitAtenReshapeOp(reshape, operands);
     } else if (auto resize = dyn_cast<AtenResize_Op>(op)) {
       return visitReshapeLikeOp(resize, operands);
     } else if (auto transposeInt = dyn_cast<AtenTransposeIntOp>(op)) {
@@ -545,6 +547,9 @@ private:
   template <typename OpTy>
   ChangeResult
   visitReshapeLikeOp(OpTy op,
+                     ArrayRef<LatticeElement<ValueKnowledge> *> operands);
+
+  ChangeResult visitAtenReshapeOp(AtenReshapeOp op,
                      ArrayRef<LatticeElement<ValueKnowledge> *> operands);
   ChangeResult
   visitAtenTransposeIntOp(AtenTransposeIntOp op,
@@ -1209,6 +1214,17 @@ ChangeResult TypeAnalyzer::visitReshapeLikeOp(
   knowledge.dtype = input.dtype;
 
   fillInSizesGivenSizesList(knowledge, op.size());
+  return getLatticeElement(op.getResult()).join(knowledge);
+}
+
+ChangeResult TypeAnalyzer::visitAtenReshapeOp(
+    AtenReshapeOp op, ArrayRef<LatticeElement<ValueKnowledge> *> operands) {
+  auto input = operands[0]->getValue();
+  auto knowledge =
+      ValueKnowledge::getNotNonePessimisticValueState(op.getContext());
+  knowledge.dtype = input.dtype;
+
+  fillInSizesGivenSizesList(knowledge, op.shape());
   return getLatticeElement(op.getResult()).join(knowledge);
 }
 
