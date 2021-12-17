@@ -100,6 +100,28 @@ static Value createSoftmaxBackwardCommonKernel(PatternRewriter &rewriter,
 }
 
 namespace {
+class DecomposeAtenReshapeOp : public OpRewritePattern<AtenReshapeOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(AtenReshapeOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value self = op.self();
+    BaseTensorType tensorType = self.getType().cast<BaseTensorType>();
+    Value shape = op.shape();
+    Type resultType = tensorType.getWithSizesAndDtype(
+      shape.size() == 0 ? Optional<ArrayRef<int64_t>>()
+                        : llvm::makeArrayRef(shape),
+      tensorType.getDtype());
+    Value viewOp = rewriter.create<AtenViewOp>(
+        loc, resultType, op.shape());
+    rewriter.replaceOp(op, viewOp);
+    return success();
+  }
+};
+} // namespace
+
+namespace {
 class DecomposeAtenSizeOp : public OpRewritePattern<AtenSizeOp> {
 public:
   using OpRewritePattern::OpRewritePattern;
@@ -580,6 +602,8 @@ class DecomposeComplexOpsPass
     target.addIllegalOp<AtenAddcdivOp>();
     target.addIllegalOp<AtenLayerNormOp>();
     patterns.add<DecomposeAtenLayerNormOp>(context);
+    target.addIllegalOp<AtenReshapeOp>();
+    patterns.add<DecomposeAtenReshapeOp>();
 
     if (failed(applyPartialConversion(getOperation(), target,
                                       std::move(patterns)))) {
