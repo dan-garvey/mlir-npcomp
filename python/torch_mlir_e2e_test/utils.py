@@ -32,6 +32,12 @@ def run_pipeline_with_repro_report(module,
         # Lower module in place to make it ready for compiler backends.
         with module.context:
             pm = PassManager.parse(pipeline)
+            if "torch-backend-to-linalg-on-tensors-backend-pipeline" in pipeline:
+                filename = module_name + '_midend.mlir'
+            filename = os.path.join("/tmp/",
+                                    filename)
+            with open(filename, 'w') as f:
+                f.write(asm_for_error_report)
             pm.run(module)
     except Exception as e:
         # TODO: More robust.
