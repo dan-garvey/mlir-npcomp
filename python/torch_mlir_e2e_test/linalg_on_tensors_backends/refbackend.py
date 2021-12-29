@@ -146,6 +146,7 @@ LOWERING_PIPELINE = ",".join([
     "convert-memref-to-llvm",
     "convert-std-to-llvm",
     "reconcile-unrealized-casts",
+    "snapshot-op-locations{filename=/tmp/bert.mlir}",
 ])
 
 
