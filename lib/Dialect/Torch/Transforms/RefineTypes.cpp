@@ -879,6 +879,16 @@ ChangeResult TypeAnalyzer::visitBinaryBroadcastingOp(
     knowledge.hasSizes = true;
     knowledge.sizes.resize(std::max(lhs.sizes.size(), rhs.sizes.size()),
                            kUnknownSize);
+    auto getDimSize = [](std::vector<int64_t> &sizes, int64_t idx) {
+      return idx > (int64_t)sizes.size() ? 0 : sizes[idx];
+    };
+    for (int64_t i = 0; i < (int64_t)knowledge.sizes.size(); i++) {
+      int64_t lhsDimSize = getDimSize(lhs.sizes, i);
+      int64_t rhsDimSize = getDimSize(lhs.sizes, i);
+      if (lhsDimSize == kUnknownSize || rhsDimSize == kUnknownSize)
+        continue;
+      knowledge.sizes[i] = std::max(lhsDimSize, rhsDimSize);
+    }
   }
 
   // The alpha in `aten.add.Tensor` and `aten.sub.Tensor` has to be lower type

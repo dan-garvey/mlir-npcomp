@@ -2307,8 +2307,7 @@ struct ConvertElementwiseOp : ConversionPattern {
         // Now, we need to ensure that such iteration is not going to trigger
         // undefined behavior, by doing appropriate checks against the current
         // dimension size.
-        auto currentDimSize =
-            rewriter.create<tensor::DimOp>(loc, tensorOperand, size.index());
+        auto currentDimSize = getDimOp(rewriter, loc, tensorOperand, size.index());
 
         // If the result size of this dimension has so far only hit the
         // statically-known-to-be-1 case above (i.e., we have not yet assigned a
@@ -2339,8 +2338,20 @@ struct ConvertElementwiseOp : ConversionPattern {
     // Add the indexing map for the outs init tensor.
     indexingMaps.push_back(rewriter.getMultiDimIdentityMap(resultRank));
 
+    SmallVector<int64_t> staticShape = llvm::to_vector<4>(llvm::map_range(
+        resultShape, [&](Value &v) -> int64_t { 
+        if (auto constOp = v.getDefiningOp<arith::ConstantOp>()) 
+          return constOp.getValue().cast<IntegerAttr>().getInt();
+        return -1; 
+    }));
+
+    for (int i = staticShape.size() - 1; i >= 0; i--) {
+      if (staticShape[i] != -1)
+        resultShape.erase(resultShape.begin() + i);
+    }
+
     Value initTensor = rewriter.create<linalg::InitTensorOp>(
-        loc, resultShape, resultType.getElementType());
+        loc, resultShape, staticShape, resultType.getElementType());
     bool hadErrorCreatingPayload = false;
     auto generic = rewriter.create<linalg::GenericOp>(
         loc, /*resultTensorTypes=*/initTensor.getType(),
