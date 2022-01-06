@@ -41,7 +41,7 @@ def run_pipeline_with_repro_report(module,
             else:
               assert("unhandled pipeline name in run_pipeline_with_repro_report")
 
-            filename = os.path.join("/usr/local/google/home/cathyzhyi/tmp/",
+            filename = os.path.join("/tmp/",
                                     filename)
             with open(filename, 'w') as f:
                 f.write(asm_for_error_report)
