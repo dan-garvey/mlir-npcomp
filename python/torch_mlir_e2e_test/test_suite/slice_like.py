@@ -232,3 +232,29 @@ def SelectIntModule_basic(module, tu: TestUtils):
     module.forward(torch.randint(10, (5,5)))
 
 # ==============================================================================
+
+class IouOfModuleStatic(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @export
+    @annotate_args([
+        None,
+        ([-1, -1], torch.float32, True),
+        ([-1, -1], torch.float32, True),
+    ])
+    def forward(self, bbox1, bbox2):
+        area1 = (bbox1[:, 2] - bbox1[:, 0]) * (bbox1[:, 3] - bbox1[:, 1])
+        area2 = (bbox2[:, 2] - bbox2[:, 0]) * (bbox2[:, 3] - bbox2[:, 1])
+        lt = torch.maximum(bbox1[:, :2], bbox2[:, :2])
+        rb = torch.minimum(bbox1[:, 2:], bbox2[:, 2:])
+
+        overlap_coord = (rb - lt).clip(0)
+        overlap = overlap_coord[:, 0] * overlap_coord[:, 1]
+        union = area1 + area2 - overlap
+
+        return overlap / union
+
+@register_test_case(module_factory=lambda: IouOfModuleStatic())
+def IouOfModuleStatic_basic(module, tu: TestUtils):
+    module.forward(tu.rand(1024, 4), tu.rand(1024, 4))
